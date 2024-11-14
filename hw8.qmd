@@ -1,0 +1,203 @@
+---
+title: "hw8"
+author: "W.T."
+format: html
+editor: visual
+---
+
+## Reading data
+
+```{r}
+library(readr)
+library(dplyr)
+# read in data, argument added in the call to read_csv. fixed error for data with Western European characters
+data1 <- read_csv("SeoulBikeData.csv", locale=locale(encoding="latin1"))
+data1
+```
+
+## EDA
+
+### Checking the data
+
+```{r}
+# 1. check for missingness
+sum(is.na(data1))
+colSums(is.na(data1))
+
+# 2. Check the column types 
+# Basic summary stats for numeric columns
+str(data1)
+
+# Summary statistics for numeric columns
+numeric_cols <- sapply(data1, is.numeric)
+
+summary(data1[, numeric_cols])
+
+# Check the unique values for the categorical variables
+# Identify categorical variables (character or factor columns)
+categorical_cols <- sapply(data1, function(x) is.character(x) || is.factor(x))
+
+# List unique values for each categorical variable (#Date variable has many unique values. They are also inconsistent)
+lapply(data1[, categorical_cols], unique)
+
+# 3. Convert the Date column into an actual date, name it parsed_date
+library(lubridate)
+# make sure Date column is a character vector
+data1$Date <- as.character(data1$Date)
+str(data1$Date)   # show as a character vector
+
+# convert the Date column into an actual date. 5304 failed to convert. Use the dmy() to convert. 
+data1$Parsed_Date <- mdy(data1$Date)
+data1$Parsed_Date[is.na(data1$Parsed_Date)] <- dmy(data1$Date[is.na(data1$Parsed_Date)])
+# check results and the new column Parsed_Date and it got all actual dates.
+head(data1, 350)
+
+
+# 4. Convert character variables into factors
+data1$Seasons <- as.factor(data1$Seasons)
+data1$Holiday <- as.factor(data1$Holiday)
+data1$`Functioning Day` <- as.factor(data1$`Functioning Day`)  # Replace with exact column name
+
+head(data1)   # check the results confirming these three are factors
+
+# 5. Rename all variables to lower snake case
+library(janitor)
+data1 <- data1 %>% clean_names()
+
+
+# 6. Create summary statistics
+summary(data1$rented_bike_count)
+
+# Summarize bike rentals by seasons
+data1 %>%
+  group_by(seasons) %>%
+  summarize(
+    mean_rentals = mean(rented_bike_count),
+    total_rentals = sum(rented_bike_count)
+  )
+
+# Summarize bike rentals by holidays
+
+data1 %>%
+  group_by(holiday) %>%
+  summarize(
+    mean_rentals = mean(rented_bike_count),
+    total_rentals = sum(rented_bike_count)
+  )
+
+# Summarize bike rentals by functioning day
+data1 %>%
+  group_by(functioning_day) %>%
+  summarize(
+    mean_rentals = mean(rented_bike_count),
+    total_rentals = sum(rented_bike_count)
+  )
+
+# subset data based on functioning day takes values of 'No' and 'Yes'
+operational_data1 <- data1 %>%
+  filter(functioning_day == "Yes")
+
+# Verify the subset (8465 obs remain)
+table(operational_data1$functioning_day)
+
+# 7. summarize across the hours. Use group_by(). Use: date, seasons, and holiday variables.
+# Create a new summarized dataset
+summarized_data1 <- data1 %>%
+  group_by(parsed_date, seasons, holiday) %>%
+  summarize(
+    # Sum of bike_count, rainfall, and snowfall
+    total_bike_count = sum(rented_bike_count),
+    total_rainfall = sum(rainfall_mm),
+    total_snowfall = sum(snowfall_cm),
+    
+    # Mean of weather-related variables
+    mean_temperature = mean(temperature_c),
+    mean_humidity = mean(humidity_percent),
+    mean_wind_speed = mean(wind_speed_m_s),
+    mean_visibility = mean(visibility_10m),
+    mean_dew_point_temperature = mean(dew_point_temperature_c)
+  )
+
+
+# View the summarized dataset
+head(summarized_data1, 300)
+
+# 8. Recreate basic summary stats and then create some plots. Report correlation between numeric variables 
+# Summary statistics for all numeric variables
+summary(summarized_data1)
+
+library(ggplot2)
+# Scatter plot: Bike count vs. Temperature. There seems to have some outlier in 'total_bike_count'
+ggplot(summarized_data1, aes(x = mean_temperature, y = total_bike_count)) +
+  geom_point(alpha = 0.6) +
+  geom_smooth(method = "lm", se = FALSE, color = "blue") +
+  labs(title = "Bike Count vs. Temperature", x = "Mean Temperature (°C)", y = "Total Bike Count")
+
+# Scatter plot: Bike count vs. Humidity. There seems to have some outliers in 'total_bike_count'
+ggplot(summarized_data1, aes(x = mean_humidity, y = total_bike_count)) +
+  geom_point(alpha = 0.6) +
+  geom_smooth(method = "lm", se = FALSE, color = "blue") +
+  labs(title = "Bike Count vs. Humidity", x = "Mean Humidity (%)", y = "Total Bike Count")
+
+
+# Select several relevant numeric variables
+numeric_data <- summarized_data1 %>%
+  ungroup() %>%  # Temporarily remove grouping
+  select(total_bike_count, total_rainfall, total_snowfall, mean_temperature, mean_humidity, mean_wind_speed, mean_visibility)
+
+# Correlation matrix. Only keep 3 decimal places as the accuracy is not that high
+cor_matrix <- round(cor(numeric_data, use = "complete.obs"), 3)  # Compute correlations
+print(cor_matrix)
+
+
+```
+
+### Split the data
+
+```{r}
+# install.packages("tidymodels")
+# library(tidymodels)
+# library(rsample)
+# 
+# # Perform a stratified split on the seasons variable
+# set.seed(123)  # For reproducibility
+# data_split <- initial_split(numeric_data, prop = 0.75, strata = seasons)
+# 
+# # Extract training and testing sets
+# training_data <- training(data_split)
+# testing_data <- testing(data_split)
+# 
+# # Check the distribution in training and test sets
+# table(training_data$seasons)
+# table(testing_data$seasons)
+# 
+# remove.packages("cli")
+# install.packages("cli")
+# 
+# 
+# # Check the structure of the dataset
+# str(data)
+# # Summary statistics for all columns
+# summary(data)
+# 
+# # For numeric columns only
+# numeric_cols <- sapply(data, is.numeric)
+# summary(data[, numeric_cols])
+# 
+# # Identify categorical variables (character or factor columns)
+# categorical_cols <- sapply(data, function(x) is.character(x) || is.factor(x))
+# 
+# # List unique values for each categorical variable
+# lapply(data[, categorical_cols], unique)
+
+```
+
+### Fitting MLR models
+
+```{r}
+# Summary table for numeric columns
+
+
+
+```
+
